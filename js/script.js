@@ -6,20 +6,16 @@ const TokenManager = {
     set(token) {
         localStorage.setItem('authToken', token);
     },
-    
     get() {
         return localStorage.getItem('authToken');
     },
-    
     remove() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('currentUser');
     },
-    
     isValid() {
         const token = this.get();
         if (!token) return false;
-        
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             return payload.exp > Date.now() / 1000;
@@ -29,20 +25,14 @@ const TokenManager = {
     }
 };
 
-
-
-
-
 // Cliente API
 class ApiClient {
     constructor() {
         this.baseURL = API_BASE_URL;
     }
-    
     async request(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
         const token = TokenManager.get();
-        
         const config = {
             headers: {
                 'Content-Type': 'application/json',
@@ -50,26 +40,21 @@ class ApiClient {
             },
             ...options
         };
-
         if (config.body && typeof config.body === 'object') {
             config.body = JSON.stringify(config.body);
         }
-        
         try {
             const response = await fetch(url, config);
             const data = await response.json();
-            
             if (!response.ok) {
                 throw new Error(data.message || `HTTP Error: ${response.status}`);
             }
-            
             return data;
         } catch (error) {
             console.error(`API Error: ${endpoint}`, error);
             throw error;
         }
     }
-    
     // Métodos de autenticación
     async register(userData) {
         return this.request('/auth/register', {
@@ -77,70 +62,56 @@ class ApiClient {
             body: userData
         });
     }
-    
     async login(credentials) {
         return this.request('/auth/login', {
             method: 'POST',
             body: credentials
         });
     }
-    
     async logout() {
         return this.request('/auth/logout', { method: 'POST' });
     }
-    
     // Métodos de eventos
     async getEvents(params = {}) {
         const queryString = new URLSearchParams(params).toString();
         return this.request(`/events${queryString ? `?${queryString}` : ''}`);
     }
-    
     async getEvent(id) {
         return this.request(`/events/${id}`);
     }
-    
     async createEvent(eventData) {
         return this.request('/events', {
             method: 'POST',
             body: eventData
         });
     }
-    
     async registerForEvent(eventId, registrationData) {
         return this.request(`/events/${eventId}/inscribirse`, {
             method: 'POST',
             body: { ...registrationData, eventoId: eventId }
         });
     }
-    
     async getMyRegistrations(email) {
         return this.request(`/events/inscripciones/mis-inscripciones?email=${email}`);
     }
-    
     async updateRegistration(registrationId, data) {
         return this.request(`/events/inscripciones/${registrationId}`, {
             method: 'PUT',
             body: data
         });
     }
-    
     async deleteRegistration(registrationId) {
         return this.request(`/events/inscripciones/${registrationId}`, {
             method: 'DELETE'
         });
     }
-
-            
-    // En tu clase ApiClient
     async getRegistration(id) {
         return this.request(`/events/inscripciones/${id}`);
     }
-    
     // Métodos de usuario
     async getUserProfile() {
         return this.request('/users/profile');
     }
-    
     async updateUserProfile(profileData) {
         return this.request('/users/profile', {
             method: 'PUT',
@@ -148,12 +119,20 @@ class ApiClient {
         });
     }
 }
-
-const api = new ApiClient();
-
+    const api = new ApiClient();
+    // Variables globales para eventos y carrito
+    let eventos = [];
+    let currentEditingId = null;
+    let cart = [];
+    // Seleccionar elementos del DOM del carrito
+    const cartIcon = document.getElementById('cart-icon');
+    const cartModal = document.getElementById('cart-modal');
+    const closeCartBtn = document.getElementById('cerrar-carrito');
+    const cartItemsList = document.getElementById('cart-items');
+    const cartTotalSpan = document.getElementById('cart-total');
+    const cartCountSpan = document.getElementById('cart-count');
 // Funciones de utilidad
 function showMessage(message, type = 'info') {
-    // Crear elemento de mensaje si no existe
     let messageContainer = document.getElementById('message-container');
     if (!messageContainer) {
         messageContainer = document.createElement('div');
@@ -167,7 +146,6 @@ function showMessage(message, type = 'info') {
         `;
         document.body.appendChild(messageContainer);
     }
-    
     const messageEl = document.createElement('div');
     messageEl.className = `message message-${type}`;
     messageEl.style.cssText = `
@@ -181,10 +159,7 @@ function showMessage(message, type = 'info') {
         animation: slideIn 0.3s ease;
     `;
     messageEl.textContent = message;
-    
     messageContainer.appendChild(messageEl);
-    
-    // Remover después de 5 segundos
     setTimeout(() => {
         if (messageEl.parentNode) {
             messageEl.remove();
@@ -192,17 +167,104 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
+// Lógica del carrito
+function addRegistrationToCart(registrationDetails) {
+    // Usamos el `eventoId` para verificar si ya está en el carrito
+    const existingItem = cart.find(item => item.eventoId === registrationDetails.eventoId);
+    if (existingItem) {
+        showMessage('Este evento ya ha sido añadido al carrito.', 'info');
+    } else {
+        cart.push({ ...registrationDetails, id: Date.now() }); // Generamos un ID único para la entrada del carrito
+        showMessage(`Inscripción a "${registrationDetails.eventoNombre}" añadida al carrito.`, 'success');
+    }
+    updateCartCount();
+    renderCart();
+}
+
+function renderCart() {
+    cartItemsList.innerHTML = '';
+    let total = 0;
+    if (cart.length === 0) {
+        cartItemsList.innerHTML = '<p>El carrito está vacío.</p>';
+    } else {
+        cart.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span class="cart-item-name">${item.eventoNombre}</span>
+                <span class="cart-item-price">S/. ${(item.precio || 0).toFixed(2)}</span>
+                <button class="btn-remove-item" data-cart-id="${item.id}">❌</button>
+            `;
+            cartItemsList.appendChild(li);
+            total += item.precio || 0;
+        });
+    }
+    cartTotalSpan.textContent = total.toFixed(2);
+    document.querySelectorAll('.btn-remove-item').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const cartId = parseInt(this.getAttribute('data-cart-id'));
+            cart = cart.filter(item => item.id !== cartId);
+            showMessage('Elemento eliminado del carrito.', 'info');
+            updateCartCount();
+            renderCart();
+        });
+    });
+}
+
+function updateCartCount() {
+    cartCountSpan.textContent = cart.length;
+}
+
+// Lógica de "Proceder al Pago" en el modal del carrito
+document.getElementById('proceder-compra').addEventListener('click', async () => {
+    if (cart.length > 0) {
+        const successfulRegistrations = [];
+        const failedRegistrations = [];
+        const firstEmail = cart[0].email; // Asumimos que todas las inscripciones son del mismo usuario
+
+        for (const item of cart) {
+            try {
+                const registrationData = {
+                    nombre: item.nombre,
+                    email: item.email,
+                    telefono: item.telefono,
+                    eventoId: item.eventoId
+                };
+                const response = await api.registerForEvent(item.eventoId, registrationData);
+                if (response.success) {
+                    successfulRegistrations.push(item);
+                } else {
+                    failedRegistrations.push(item);
+                    showMessage(`Error al inscribir a "${item.eventoNombre}": ${response.message}`, 'error');
+                }
+            } catch (error) {
+                failedRegistrations.push(item);
+                showMessage(`Error de conexión al inscribir a "${item.eventoNombre}"`, 'error');
+            }
+        }
+        
+        if (successfulRegistrations.length > 0) {
+            showMessage('¡Todas las inscripciones pagadas con éxito!', 'success');
+            cart = [];
+            updateCartCount();
+            renderCart();
+            cartModal.style.display = 'none';
+            if (firstEmail) {
+                await loadRegistrations(firstEmail);
+            }
+        } else {
+            showMessage('No se pudo completar ninguna de las inscripciones.', 'error');
+        }
+    } else {
+        showMessage('Tu carrito está vacío.', 'error');
+    }
+});
+// Funciones de utilidad y renderizado (sin cambios significativos)
 function handleApiError(error, defaultMessage = 'Ha ocurrido un error') {
     console.error('API Error:', error);
     const message = error.message || defaultMessage;
     showMessage(message, 'error');
 }
 
-// Variables globales para eventos
-let eventos = [];
-let currentEditingId = null;
-
-// Función para cargar eventos disponibles
 async function loadEvents() {
     try {
         const response = await api.getEvents();
@@ -212,294 +274,7 @@ async function loadEvents() {
             populateEventSelect();
         }
     } catch (error) {
-        console.error('Error cargando eventos:', error);
-        showMessage('Error al cargar eventos', 'error');
-    }
-}
-
-// Función para conectar las cards con el formulario
-function setupCardButtons() {
-    const cardButtons = document.querySelectorAll('.card .btn-añadir');
-    
-    cardButtons.forEach(button => {
-        button.addEventListener('click', (e) => {
-            e.preventDefault();
-            
-            // Obtener el nombre del evento desde la card
-            const card = button.closest('.card');
-            const eventName = card.querySelector('h3').textContent;
-            
-            // Autocompletar el campo de evento
-            const eventoInput = document.getElementById('evento');
-            if (eventoInput) {
-                eventoInput.value = eventName;
-                showMessage(`Evento "${eventName}" seleccionado`, 'success');
-                
-                // Desplazar al formulario
-                document.querySelector('#cliente-form').scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
-        });
-    });
-}
-
-// Manejo del formulario de inscripción
-function setupInscriptionForm() {
-    const form = document.getElementById('cliente-form');
-    if (!form) return;
-    
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const nombre = document.getElementById('nombre').value.trim();
-        const email = document.getElementById('email').value.trim();
-        const telefono = document.getElementById('telefono').value.trim();
-        const evento = document.getElementById('evento').value.trim();
-        
-        if (!nombre || !email || !telefono || !evento) {
-            showMessage('Por favor complete todos los campos', 'error');
-            return;
-        }
-        
-        try {
-            const response = await api.registerForEvent({
-                nombre,
-                email,
-                telefono,
-                evento
-            });
-            
-            showMessage('Inscripción exitosa', 'success');
-            form.reset();
-            loadRegistrations();
-        } catch (error) {
-            showMessage(error.message || 'Error al inscribirse', 'error');
-        }
-    });
-}
-
-// En la función setupInscriptionForm (o donde manejas el submit del formulario):
-const clienteForm = document.getElementById('cliente-form');
-if (clienteForm) {
-    clienteForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const nombre = document.getElementById('nombre').value.trim();
-        const email = document.getElementById('email').value.trim();
-        const telefono = document.getElementById('telefono').value.trim();
-        const eventoNombre = document.getElementById('evento').value.trim();
-        
-        if (!nombre || !email || !telefono || !eventoNombre) {
-            showMessage('Por favor, completa todos los campos', 'error');
-            return;
-        }
-        
-        // Buscar el evento completo por nombre
-        const evento = eventos.find(e => e.nombre === eventoNombre);
-        if (!evento) {
-            showMessage('Evento no encontrado', 'error');
-            return;
-        }
-        
-        try {
-            // Enviar tanto el ID como el nombre del evento
-            const userData = { 
-                nombre, 
-                email, 
-                telefono,
-                eventoId: evento.id,
-                eventoNombre: evento.nombre // Asegurarnos de enviar el nombre
-            };
-            
-            const response = await api.registerForEvent(evento.id, userData);
-            
-            if (response.success) {
-                showMessage('¡Inscripción exitosa!', 'success');
-                clienteForm.reset();
-                // Recargar las inscripciones mostrando el nombre del evento
-                await loadRegistrations(email); // Pasar el email directamente
-            }
-        } catch (error) {
-            showMessage(error.message || 'Error en la inscripción', 'error');
-        }
-    });
-}
-
-// Modificar la función loadRegistrations para aceptar el email como parámetro
-async function loadRegistrations(email = null) {
-    try {
-        // Si no se proporciona email, intentar obtenerlo del formulario
-        if (!email) {
-            const emailInput = document.getElementById('email');
-            if (emailInput && emailInput.value.trim()) {
-                email = emailInput.value.trim();
-            } else {
-                showMessage('Ingresa tu email para ver las inscripciones', 'error');
-                return;
-            }
-        }
-        
-        const response = await api.getMyRegistrations(email);
-        if (response.success) {
-            updateRegistrationsTable(response.data);
-        }
-    } catch (error) {
-        console.error('Error cargando inscripciones:', error);
-        showMessage('Error al cargar inscripciones', 'error');
-    }
-}
-
-function updateRegistrationsTable(registrations) {
-    const tbody = document.querySelector('#tabla-clientes tbody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '';
-    
-    if (!registrations || registrations.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5">No hay inscripciones</td></tr>';
-        return;
-    }
-    
-    registrations.forEach(reg => {
-        const row = document.createElement('tr');
-        
-        // Asegúrate de mostrar el nombre del evento correctamente
-        let eventoNombre = 'N/A';
-        if (typeof reg.evento === 'object' && reg.evento !== null) {
-            eventoNombre = reg.evento.nombre || 'N/A';
-        } else if (typeof reg.evento === 'string') {
-            eventoNombre = reg.evento;
-        } else if (reg.eventoNombre) {
-            eventoNombre = reg.eventoNombre;
-        }
-        
-        row.innerHTML = `
-            <td>${reg.nombre || 'N/A'}</td>
-            <td>${reg.email || 'N/A'}</td>
-            <td>${reg.telefono || 'N/A'}</td>
-            <td>${eventoNombre}</td>
-            <td>
-                <button class="btn-editar" data-id="${reg.id}">Editar</button>
-                <button class="btn-eliminar" data-id="${reg.id}">Eliminar</button>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-    
-    // Configurar eventos para los botones
-    setupTableButtons();
-}
-
-// Agrega esta función para configurar los eventos de los botones
-function setupTableButtons() {
-    // Botón Editar
-    document.querySelectorAll('.btn-editar').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const id = this.getAttribute('data-id');
-            await editRegistration(id);
-        });
-    });
-    
-    // Botón Eliminar
-    document.querySelectorAll('.btn-eliminar').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const id = this.getAttribute('data-id');
-            await deleteRegistration(id);
-        });
-    });
-}
-
-
-// Implementa la función editRegistration
-async function editRegistration(id) {
-    try {
-        // 1. Obtener los datos de la inscripción
-        const response = await api.getRegistration(id);
-        if (!response.success) throw new Error('No se pudo cargar la inscripción');
-        
-        const inscripcion = response.data;
-        
-        // 2. Rellenar el formulario de edición
-        document.getElementById('edit-nombre').value = inscripcion.nombre;
-        document.getElementById('edit-email').value = inscripcion.email;
-        document.getElementById('edit-telefono').value = inscripcion.telefono;
-        
-        // Seleccionar el evento correcto en el select
-        const selectEvento = document.getElementById('edit-evento');
-        if (selectEvento) {
-            const eventoId = inscripcion.eventoId || (inscripcion.evento && inscripcion.evento.id);
-            if (eventoId) {
-                selectEvento.value = eventoId;
-            }
-        }
-        
-        // 3. Mostrar el modal
-        document.getElementById('modal-editar').style.display = 'flex';
-        currentEditingId = id;
-        
-    } catch (error) {
-        console.error('Error al editar:', error);
-        showMessage('Error al cargar datos para editar', 'error');
-    }
-}
-
-// Implementa la función deleteRegistration
-async function deleteRegistration(id) {
-    if (!confirm('¿Estás seguro de eliminar esta inscripción?')) return;
-    
-    try {
-        const response = await api.deleteRegistration(id);
-        if (response.success) {
-            showMessage('Inscripción eliminada correctamente', 'success');
-            // Recargar las inscripciones
-            const email = document.getElementById('email')?.value.trim();
-            if (email) await loadRegistrations(email);
-        } else {
-            throw new Error(response.message || 'Error al eliminar');
-        }
-    } catch (error) {
-        console.error('Error al eliminar:', error);
-        showMessage(error.message || 'Error al eliminar inscripción', 'error');
-    }
-}
-
-// Inicialización cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', () => {
-    // Verificar autenticación
-    if (!TokenManager.isValid()) {
-        return;
-    }
-    
-    // Configurar elementos de la interfaz
-    setupCardButtons();
-    setupInscriptionForm();
-    
-    // Configurar cierre de sesión
-    document.querySelector('a[href="index.html"]').addEventListener('click', (e) => {
-        e.preventDefault();
-        api.logout().finally(() => {
-            TokenManager.remove();
-            window.location.href = 'index.html';
-        });
-    });
-});
-
-// Funciones para editar/eliminar (simplificadas)
-async function editRegistration(id) {
-    // Implementar lógica de edición
-    console.log('Editar inscripción:', id);
-}
-
-async function deleteRegistration(id) {
-    if (!confirm('¿Está seguro de eliminar esta inscripción?')) return;
-    
-    try {
-        await api.deleteRegistration(id);
-        showMessage('Inscripción eliminada', 'success');
-        loadRegistrations();
-    } catch (error) {
-        showMessage('Error al eliminar', 'error');
+        handleApiError(error, 'Error al cargar eventos');
     }
 }
 
@@ -520,77 +295,360 @@ function renderEventCards() {
                 <p>${evento.descripcion || 'Descripción no disponible'}</p>
                 <p><strong>Fecha:</strong> ${new Date(evento.fecha).toLocaleDateString()}</p>
                 <p><strong>Lugar:</strong> ${evento.lugar || 'No especificado'}</p>
+                <p><strong>Precio:</strong> S/.${(evento.precio || 0).toFixed(2)}</p>
                 <button class="btn-añadir" data-event-id="${evento.id}" data-event-name="${evento.nombre}">+</button>
             </div>
         `;
         eventsContainer.appendChild(card);
     });
     
-    // Agregar event listeners a los botones de añadir
-    document.querySelectorAll('.btn-añadir').forEach(button => {
+    // Se llama a la función setupCardButtons para que los listeners se añadan
+    setupCardButtons();
+}
+
+// Función para conectar las cards con el formulario de inscripción
+function setupCardButtons() {
+    const cardButtons = document.querySelectorAll('.card .btn-añadir');
+    
+    cardButtons.forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
+            
             const eventName = button.getAttribute('data-event-name');
             const eventId = button.getAttribute('data-event-id');
             
-            if (!eventName) {
-                console.error('No se pudo obtener el nombre del evento');
-                showMessage('Error al seleccionar el evento', 'error');
-                return;
-            }
-            
+            // Llama a la función que autocompleta el campo de evento
             autocompleteEventField(eventName, eventId);
         });
     });
 }
 
-// Función para autocompletar el campo de evento
+// Función para autocompletar el campo de evento en el formulario
 function autocompleteEventField(eventName, eventId) {
     const eventoInput = document.getElementById('evento');
-    const eventoIdInput = document.getElementById('evento-id'); // Campo oculto para el ID
-    
     if (eventoInput) {
-        eventoInput.value = eventName;
-        
-        // Si existe un campo para el ID del evento, lo actualizamos
-        if (eventoIdInput) {
-            eventoIdInput.value = eventId;
-        }
-        
-        // Desplazarse suavemente al formulario
+        eventoInput.value = eventName; // Aquí se asigna el nombre del evento
         const formSection = document.getElementById('registration-section');
         if (formSection) {
             formSection.scrollIntoView({ behavior: 'smooth' });
         }
-        
         showMessage(`Evento "${eventName}" seleccionado`, 'success');
     } else {
         console.warn('No se encontró el campo de evento en el formulario');
         showMessage('Error al seleccionar el evento', 'error');
     }
 }
+
+// Función para conectar las cards con el formulario de inscripción
+function setupCardButtons() {
+    const cardButtons = document.querySelectorAll('.card .btn-añadir');
     
-    // Agregar event listeners a los botones de añadir
-    document.querySelectorAll('.btn-añadir').forEach(button => {
+    cardButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            const eventName = button.getAttribute('data-event-name');
+            const eventId = button.getAttribute('data-event-id');
+            
+            // Llama a la función que autocompleta el campo de evento
+            autocompleteEventField(eventName, eventId);
+        });
+    });
+}
+
+function setupCardButtons() {
+    const cardButtons = document.querySelectorAll('.card .btn-añadir');
+    cardButtons.forEach(button => {
         button.addEventListener('click', (e) => {
             e.preventDefault();
             const eventName = button.getAttribute('data-event-name');
-            addEventToForm(eventName);
+            const eventId = button.getAttribute('data-event-id');
+            
+            // Llama a esta función para rellenar el campo del formulario de inscripción//
+            autocompleteEventField(eventName, eventId); 
         });
     });
+}
 
-
-// Función para agregar evento al formulario desde las tarjetas
-function addEventToForm(eventName) {
+function autocompleteEventField(eventName, eventId) {
     const eventoInput = document.getElementById('evento');
     if (eventoInput) {
+        // Asigna el nombre del evento al campo de texto//
         eventoInput.value = eventName;
-        eventoInput.scrollIntoView({ behavior: 'smooth' });
+        const formSection = document.getElementById('registration-section');
+        if (formSection) {
+            formSection.scrollIntoView({ behavior: 'smooth' });
+        }
         showMessage(`Evento "${eventName}" seleccionado`, 'success');
+    } else {
+        console.warn('No se encontró el campo de evento en el formulario');
+        showMessage('Error al seleccionar el evento', 'error');
     }
 }
 
-// Función para llenar el select de eventos en el modal
+function setupCardButtons() {
+    const cardButtons = document.querySelectorAll('.card .btn-añadir');
+    cardButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const eventName = button.getAttribute('data-event-name');
+            const eventoId = button.getAttribute('data-event-id');
+            const evento = eventos.find(e => e.id === parseInt(eventoId));
+            if (!evento) {
+                showMessage('Error: Evento no encontrado', 'error');
+                return;
+            }
+            // Corregido: Ahora se llama a esta función para rellenar el campo
+            autocompleteEventField(eventName, eventoId); 
+        });
+    });
+}
+
+function setupCardButtons() {
+    const cardButtons = document.querySelectorAll('.card .btn-añadir');
+    cardButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const eventName = button.getAttribute('data-event-name');
+            const eventoId = button.getAttribute('data-event-id');
+            const evento = eventos.find(e => e.id === parseInt(eventoId));
+            if (!evento) {
+                showMessage('Error: Evento no encontrado', 'error');
+                return;
+            }
+            autocompleteEventField(eventName, eventoId);
+        });
+    });
+}
+
+function autocompleteEventField(eventName, eventId) {
+    const eventoInput = document.getElementById('evento');
+    if (eventoInput) {
+        eventoInput.value = eventName;
+        const formSection = document.getElementById('registration-section');
+        if (formSection) {
+            formSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        showMessage(`Evento "${eventName}" seleccionado`, 'success');
+    } else {
+        console.warn('No se encontró el campo de evento en el formulario');
+        showMessage('Error al seleccionar el evento', 'error');
+    }
+}
+
+// Manejo del formulario de inscripción (modificado para interactuar con el carrito)
+function setupInscriptionForm() {
+    const clienteForm = document.getElementById('cliente-form');
+    if (!clienteForm) return;
+
+    clienteForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const nombre = document.getElementById('nombre').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const telefono = document.getElementById('telefono').value.trim();
+        const eventoNombre = document.getElementById('evento').value.trim();
+
+        if (!nombre || !email || !telefono || !eventoNombre) {
+            showMessage('Por favor, completa todos los campos', 'error');
+            return;
+        }
+
+        const evento = eventos.find(e => e.nombre === eventoNombre);
+        if (!evento) {
+            showMessage('Evento no encontrado. Selecciona un evento de la lista destacada.', 'error');
+            return;
+        }
+
+        const registrationData = {
+            id: Date.now(), // ID temporal para la tabla
+            nombre,
+            email,
+            telefono,
+            eventoId: evento.id,
+            eventoNombre: evento.nombre,
+            precio: parseFloat(evento.precio || 0)
+        };
+
+        // Aquí se añade la lógica para actualizar la tabla
+        addRegistrationToTable(registrationData);
+        showMessage(`Inscripción a "${eventoNombre}" añadida a la tabla.`, 'success');
+
+        // Opcional: para limpiar el formulario después de la inscripción
+        clienteForm.reset();
+    });
+}
+
+// Nueva función para añadir la inscripción a la tabla
+function addRegistrationToTable(registration) {
+    const tbody = document.querySelector('#tabla-clientes tbody');
+    if (!tbody) return;
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td>${registration.nombre || 'N/A'}</td>
+        <td>${registration.email || 'N/A'}</td>
+        <td>${registration.telefono || 'N/A'}</td>
+        <td>${registration.eventoNombre || 'N/A'}</td>
+        <td>
+            <button class="btn-editar" data-id="${registration.id}">Editar</button>
+            <button class="btn-eliminar" data-id="${registration.id}">Eliminar</button>
+        </td>
+    `;
+    tbody.appendChild(row);
+    // Se vuelven a configurar los botones para las nuevas filas
+    setupTableButtons();
+}
+
+// Funciones para la tabla de inscripciones//
+async function loadRegistrations(email = null) {
+    try {
+        if (!email) {
+            const emailInput = document.getElementById('email');
+            if (emailInput && emailInput.value.trim()) {
+                email = emailInput.value.trim();
+            } else {
+                showMessage('Ingresa tu email para ver las inscripciones', 'error');
+                return;
+            }
+        }
+        const response = await api.getMyRegistrations(email);
+        if (response.success) {
+            updateRegistrationsTable(response.data);
+        }
+    } catch (error) {
+        handleApiError(error, 'Error al cargar inscripciones');
+    }
+}
+function updateRegistrationsTable(registrations) {
+    const tbody = document.querySelector('#tabla-clientes tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!registrations || registrations.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5">No hay inscripciones</td></tr>';
+        return;
+    }
+    registrations.forEach(reg => {
+        const row = document.createElement('tr');
+        const eventoNombre = reg.evento?.nombre || reg.eventoNombre || 'N/A';
+        row.innerHTML = `
+            <td>${reg.nombre || 'N/A'}</td>
+            <td>${reg.email || 'N/A'}</td>
+            <td>${reg.telefono || 'N/A'}</td>
+            <td>${eventoNombre}</td>
+            <td>
+                <button class="btn-editar" data-id="${reg.id}">Editar</button>
+                <button class="btn-eliminar" data-id="${reg.id}">Eliminar</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    setupTableButtons();
+}
+function setupTableButtons() {
+    document.querySelectorAll('.btn-editar').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const id = this.getAttribute('data-id');
+            await editRegistration(id);
+        });
+    });
+    document.querySelectorAll('.btn-eliminar').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const id = this.getAttribute('data-id');
+            await deleteRegistration(id);
+        });
+    });
+}
+
+async function editRegistration(id) {
+    try {
+        const response = await api.getRegistration(id);
+        if (!response.success) {
+            throw new Error(response.message || 'No se pudo cargar la inscripción');
+        }
+        const inscripcion = response.data;
+        document.getElementById('edit-nombre').value = inscripcion.nombre || '';
+        document.getElementById('edit-email').value = inscripcion.email || '';
+        document.getElementById('edit-telefono').value = inscripcion.telefono || '';
+        const selectEvento = document.getElementById('edit-evento');
+        if (selectEvento && eventos.length > 0) {
+            const eventoId = inscripcion.eventoId || (inscripcion.evento && inscripcion.evento.id);
+            if (eventoId) {
+                selectEvento.value = eventoId;
+            }
+        }
+        const modal = document.getElementById('modal-editar');
+        if (modal) {
+            modal.style.display = 'flex';
+            currentEditingId = id;
+        } else {
+            throw new Error('Modal de edición no encontrado');
+        }
+    } catch (error) {
+        handleApiError(error, 'Error al cargar datos para editar');
+    }
+}
+
+async function deleteRegistration(id) {
+    if (!confirm('¿Estás seguro de eliminar esta inscripción?')) return;
+    try {
+        const response = await api.deleteRegistration(id);
+        if (response.success) {
+            showMessage('Inscripción eliminada correctamente', 'success');
+            const email = document.getElementById('email')?.value.trim();
+            if (email) await loadRegistrations(email);
+        } else {
+            throw new Error(response.message || 'Error al eliminar');
+        }
+    } catch (error) {
+        handleApiError(error, 'Error al eliminar inscripción');
+    }
+}
+function setupEditModal() {
+    const modal = document.getElementById('modal-editar');
+    const editForm = document.getElementById('editar-form');
+    const cancelButton = document.getElementById('cancelar-edicion');
+    if (!modal || !editForm || !cancelButton) {
+        return;
+    }
+    editForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentEditingId) {
+            showMessage('Error: No se ha seleccionado inscripción para editar', 'error');
+            return;
+        }
+        const nombre = document.getElementById('edit-nombre').value.trim();
+        const email = document.getElementById('edit-email').value.trim();
+        const telefono = document.getElementById('edit-telefono').value.trim();
+        const eventoId = parseInt(document.getElementById('edit-evento').value);
+        if (!nombre || !email || !telefono || !eventoId) {
+            showMessage('Por favor, completa todos los campos', 'error');
+            return;
+        }
+        try {
+            const updateData = { nombre, email, telefono, eventoId };
+            const response = await api.updateRegistration(currentEditingId, updateData);
+            if (response.success) {
+                showMessage('Inscripción actualizada exitosamente', 'success');
+                modal.style.display = 'none';
+                currentEditingId = null;
+                const currentEmail = document.getElementById('email')?.value.trim();
+                if (currentEmail) await loadRegistrations(currentEmail);
+            }
+        } catch (error) {
+            handleApiError(error, 'Error al actualizar inscripción');
+        }
+    });
+    cancelButton.addEventListener('click', () => {
+        modal.style.display = 'none';
+        currentEditingId = null;
+    });
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            currentEditingId = null;
+        }
+    });
+}
 function populateEventSelect() {
     const editEventoSelect = document.getElementById('edit-evento');
     if (editEventoSelect && eventos.length > 0) {
@@ -603,28 +661,16 @@ function populateEventSelect() {
         });
     }
 }
-
-// Event Listeners principales
+// Inicialización principal
 document.addEventListener('DOMContentLoaded', async () => {
-    // Verificar autenticación
-    if (TokenManager.isValid()) {
-        try {
-            const response = await api.getUserProfile();
-            localStorage.setItem('currentUser', JSON.stringify(response.data.user));
-        } catch (error) {
-            TokenManager.remove();
-        }
-    }
-    
-    // Cargar eventos al inicio
     await loadEvents();
-    
-    // --- Lógica de Registro ---
+    setupCardButtons();
+    setupInscriptionForm();
+    setupEditModal();
     const registrationForm = document.getElementById('registrationForm');
     if (registrationForm) {
         registrationForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            
             const formData = new FormData(registrationForm);
             const userData = {
                 username: formData.get('username').trim(),
@@ -632,211 +678,99 @@ document.addEventListener('DOMContentLoaded', async () => {
                 password: formData.get('password'),
                 confirmPassword: formData.get('confirmPassword')
             };
-            
-            // Validaciones del frontend
             if (userData.password !== userData.confirmPassword) {
                 showMessage('Las contraseñas no coinciden.', 'error');
                 return;
             }
-            
             try {
                 const response = await api.register(userData);
                 showMessage(response.message, 'success');
-                
-                // Guardar token y usuario
                 TokenManager.set(response.data.token);
                 localStorage.setItem('currentUser', JSON.stringify(response.data.user));
-                
-                setTimeout(() => {
-                    window.location.href = '/eventos';
-                }, 1500);
+                setTimeout(() => { window.location.href = '/eventos'; }, 1500);
             } catch (error) {
                 handleApiError(error, 'Error al registrar usuario');
             }
         });
     }
-    
-    // --- Lógica de Inicio de Sesión ---
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            
             const formData = new FormData(loginForm);
             const credentials = {
                 identifier: formData.get('username').trim(),
                 password: formData.get('password')
             };
-            
             try {
                 const response = await api.login(credentials);
                 showMessage(response.message, 'success');
-                
-                // Guardar token y usuario
                 TokenManager.set(response.data.token);
                 localStorage.setItem('currentUser', JSON.stringify(response.data.user));
-                
-                setTimeout(() => {
-                    window.location.href = '/eventos';
-                }, 1000);
+                setTimeout(() => { window.location.href = '/eventos'; }, 1000);
             } catch (error) {
                 handleApiError(error, 'Error al iniciar sesión');
             }
         });
     }
-    
-    // --- Lógica de Cierre de Sesión ---
     const logoutLinks = document.querySelectorAll('a[href*="index.html"]');
     logoutLinks.forEach(link => {
         if (link.textContent.includes('Cerrar')) {
             link.addEventListener('click', async (event) => {
                 event.preventDefault();
-                
                 try {
                     await api.logout();
                 } catch (error) {
                     console.log('Error al cerrar sesión:', error);
                 }
-                
                 TokenManager.remove();
                 showMessage('Sesión cerrada exitosamente', 'success');
-                
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 1000);
+                setTimeout(() => { window.location.href = '/'; }, 1000);
             });
         }
     });
-    
-    // --- Lógica de Inscripción a Eventos ---
-    const clienteForm = document.getElementById('cliente-form');
-    if (clienteForm) {
-        clienteForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const nombre = document.getElementById('nombre').value.trim();
-            const email = document.getElementById('email').value.trim();
-            const telefono = document.getElementById('telefono').value.trim();
-            const eventoNombre = document.getElementById('evento').value.trim();
-            
-            if (!nombre || !email || !telefono || !eventoNombre) {
-                showMessage('Por favor, completa todos los campos', 'error');
-                return;
-            }
-            
-            // Buscar el ID del evento por nombre
-            const evento = eventos.find(e => e.nombre === eventoNombre);
-            if (!evento) {
-                showMessage('Evento no encontrado', 'error');
-                return;
-            }
-            
-            try {
-                const userData = { nombre, email, telefono };
-                const response = await api.registerForEvent(evento.id, userData);
-                
-                if (response.success) {
-                    showMessage('¡Inscripción exitosa!', 'success');
-                    clienteForm.reset();
-                }
-            } catch (error) {
-                showMessage(error.message || 'Error en la inscripción', 'error');
-            }
-        });
-    }
-    
-    // --- Lógica para ver mis inscripciones ---
-    const misInscripcionesBtn = document.getElementById('mis-inscripciones-btn');
-    if (misInscripcionesBtn) {
-        misInscripcionesBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            
-            const emailInput = document.getElementById('email');
-            const email = emailInput ? emailInput.value.trim() : '';
-            
-            if (!email) {
-                showMessage('Por favor, ingresa tu email', 'error');
-                return;
-            }
-            
-            try {
-                const response = await api.getMyRegistrations(email);
-                if (response.success) {
-                    showMessage('Inscripciones cargadas', 'success');
-                    // Aquí puedes implementar la lógica para mostrar las inscripciones
-                    console.log('Mis inscripciones:', response.data);
-                }
-            } catch (error) {
-                handleApiError(error, 'Error al obtener inscripciones');
-            }
-        });
-    }
+
+    cartIcon.addEventListener('click', (e) => {
+        e.preventDefault();
+        cartModal.style.display = 'flex';
+        renderCart();
+    });
+    closeCartBtn.addEventListener('click', () => {
+        cartModal.style.display = 'none';
+    });
 });
 
-// Agregar estilos CSS para las cards de eventos
+// Estilos CSS
 const style = document.createElement('style');
 style.textContent = `
-    #events-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 20px;
-        padding: 20px;
-    }
-    
-    .event-card {
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        overflow: hidden;
-        transition: transform 0.3s ease;
-    }
-    
-    .event-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
-    
-    .event-card img {
-        width: 100%;
-        height: 200px;
-        object-fit: cover;
-    }
-    
-    .event-card .card {
-        padding: 15px;
-    }
-    
-    .event-card h3 {
-        margin-top: 0;
-        color: #333;
-    }
-    
-    .event-card p {
-        margin: 5px 0;
-        color: #666;
-    }
-    
-    .btn-añadir {
-        background-color: #28a745;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 30px;
-        height: 30px;
-        font-size: 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-top: 10px;
-    }
-    
-    .btn-añadir:hover {
-        background-color: #218838;
-    }
-    
-    @keyframes slideIn {
-        from { transform: translateY(-20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-    }
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+    .modal-content { background-color: #fefefe; padding: 20px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+    .modal-content h2 { margin-top: 0; color: #333; text-align: center; }
+    .modal-content form { display: flex; flex-direction: column; gap: 15px; }
+    .modal-content input, .modal-content select { padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .modal-content button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .modal-content button[type="submit"] { background-color: #28a745; color: white; }
+    .modal-content button[type="button"] { background-color: #6c757d; color: white; margin-top: 10px; }
+    .btn-editar { background-color: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-right: 5px; }
+    .btn-eliminar { background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+    .btn-editar:hover { background-color: #0056b3; }
+    .btn-eliminar:hover { background-color: #c82333; }
+    @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    #cart-modal { display: none; position: fixed; z-index: 1001; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); justify-content: center; align-items: center; }
+    .cart-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .cart-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+    .cart-header h2 { margin: 0; }
+    .cart-close-btn { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .cart-close-btn:hover, .cart-close-btn:focus { color: #000; text-decoration: none; }
+    .cart-items ul { list-style: none; padding: 0; }
+    .cart-items li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .cart-items li:last-child { border-bottom: none; }
+    .cart-total-container { display: flex; justify-content: space-between; font-size: 1.2em; font-weight: bold; margin-top: 15px; padding-top: 10px; border-top: 2px solid #333; }
+    .btn-proceder-compra { background-color: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 15px; }
+    .btn-proceder-compra:hover { background-color: #0056b3; }
+    #cart-icon { cursor: pointer; position: relative; }
+    #cart-count { position: absolute; top: -10px; right: -10px; background-color: red; color: white; border-radius: 50%; padding: 2px 6px; font-size: 12px; }
+    .btn-remove-item { background: none; border: none; cursor: pointer; color: red; font-weight: bold; }
 `;
 document.head.appendChild(style);

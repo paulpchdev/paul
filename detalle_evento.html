@@ -16,6 +16,10 @@
       <a href="index.html">Inicio</a>
     </nav>
     <div>
+      <a href="#" id="cart-icon" style="color: white; margin-right: 20px;">
+      <span style="font-size: 24px;">🛒</span> 
+      <span id="cart-count" style="vertical-align: top; font-size: 12px; background-color: red; color: white; border-radius: 50%; padding: 2px 6px;">0</span>
+      </a>
       <a href="index.html" style="color: white; margin-left: 20px;">Cerrar sesión</a>
     </div>
   </header>
@@ -45,7 +49,17 @@
     </div>
 
   </div>
-
+  <div id="cart-modal" class="modal">
+    <div class="modal-content">
+      <h2>Mi Carrito</h2>
+      <ul id="cart-items" class="cart-list"></ul>
+     <div class="cart-summary">
+    <p>Total: S/. <span id="cart-total">0.00</span></p>
+    </div>
+    <button id="proceder-compra" class="btn-proceed">Proceder al pago</button>
+    <button type="button" id="cerrar-carrito" class="btn-cancel">Cerrar</button>
+    </div>
+  </div>
   <!-- Ventana emergente de edición -->
   <div id="modal-editar" class="modal">
     <div class="modal-content">
@@ -54,8 +68,7 @@
         <input type="text" id="edit-nombre" placeholder="Nombre" required/>
         <input type="email" id="edit-email" placeholder="Email" required />
         <input type="text" id="edit-telefono" placeholder="Telefono" required />
-        <select id="edit-evento" required>
-                           </select>
+        <select id="edit-evento" required></select>
         <button type="submit">Guardar Cambios</button>
         <button type="button" id="cancelar-edicion">Cancelar</button>
       </form>
@@ -70,6 +83,7 @@
       <div class="info">
         <h3>¡Temporada digital y Más!</h3>
         <span>Lima • 15 Jul – 15 Ago</span>
+        <h3>S/.40.00</h3> 
       </div>
       <button class="btn-añadir">+</button>
     </article>
@@ -79,7 +93,8 @@
       <img src="img/cards/513199091_746317388335271_7685396646841333246_n.jpg" alt="Evento 2" />
       <div class="info">
         <h3>Dr. Jekyll & Mr. Hyde</h3>
-        <span>Arequipa • 20 Jul • 7 PM</span> 
+        <span>Arequipa • 20 Jul • 7 PM</span>
+        <h3>S/.30.00</h3> 
       </div>
       <button class="btn-añadir">+</button>
     </article>
@@ -90,6 +105,7 @@
       <div class="info">
         <h3>Meet & Greet</h3>
         <span>Trujillo • 30 Jul • 5 PM</span>
+        <h3>S/.20.00</h3> 
       </div>
       <button class="btn-añadir">+</button>
     </article>
@@ -99,6 +115,7 @@
       <div class="info">
         <h3>Gastronomicon</h3>
         <span>Lima • 30 Jul • 5 PM</span>
+        <h3>S/.50.00</h3> 
       </div>
       <button class="btn-añadir">+</button>
     </article>
@@ -106,8 +123,9 @@
     <article class="card">
       <img src="img/cards/513934264_670515809354703_3791911029304559057_n.jpg" alt="Evento 5" />
       <div class="info">
-        <h3>Oratoria</h3>
+        <h3>Oratoria</h3> 
         <span>Lima • 30 Jul • 5 PM</span>
+        <h3>S/.40.00</h3>
       </div>
       <button class="btn-añadir">+</button>
     </article>
