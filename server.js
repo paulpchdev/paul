@@ -5,6 +5,8 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
+const { testConnection } = require('./node/config/database');
+
 // Importar rutas
 const authRoutes = require('./node/routes/auth');
 const eventRoutes = require('./node/routes/events');
@@ -103,6 +105,22 @@ app.use('*', (req, res) => {
     message: 'Ruta no encontrada' 
   });
 });
+
+async function startServer() {
+  try {
+    await testConnection();
+    
+    app.listen(PORT, () => {
+      console.log(`🚀 Servidor CorvoEvents ejecutándose en http://localhost:${PORT}`);
+      // ... resto de tus console.log
+    });
+  } catch (error) {
+    console.error('❌ No se pudo conectar a la base de datos:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor CorvoEvents ejecutándose en http://localhost:${PORT}`);
